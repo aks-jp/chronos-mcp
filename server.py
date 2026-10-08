@@ -4,6 +4,7 @@ from datetime import datetime, timezone as dt_tz
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -33,6 +34,11 @@ mcp = FastMCP(
     host=os.getenv("MCP_HOST", "0.0.0.0"),
     port=int(os.getenv("MCP_PORT", "8765")),
     stateless_http=True,
+)
+
+# All tools only read the clock and the bundled timezone database.
+READ_ONLY = ToolAnnotations(
+    readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
 )
 
 
@@ -69,7 +75,7 @@ def describe(dt: datetime) -> dict:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def get_current_time(timezone: str | list[str] | None = None) -> dict:
     """Get the current date and time. Pass one IANA timezone
     (e.g. 'Europe/Berlin') or a list of up to 10. Defaults to the server zone."""
@@ -79,7 +85,7 @@ def get_current_time(timezone: str | list[str] | None = None) -> dict:
     return results[0] if len(results) == 1 else {"results": results}
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def convert_time(time: str, source_timezone: str, target_timezones: list[str]) -> dict:
     """Convert a time between timezones. 'time' is 'HH:MM' (today in the
     source zone) or an ISO datetime like '2026-12-24T18:00'."""
@@ -100,7 +106,7 @@ def convert_time(time: str, source_timezone: str, target_timezones: list[str]) -
     return {"source": describe(dt), "targets": targets}
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def list_timezones(filter: str = "") -> dict:
     """List valid IANA timezone names, optionally filtered by a substring
     such as 'Europe' or 'Tokyo'. Returns at most 50 names."""

@@ -4,7 +4,7 @@ A tiny [Model Context Protocol](https://modelcontextprotocol.io) server that giv
 
 Language models have no clock. Without a tool they guess the date from their training data or the system prompt. A tool call returns the real time at the moment of the request, even in long sessions.
 
-- Three read-only tools, no side effects
+- Three read-only tools, no side effects (annotated with `readOnlyHint`, so clients that only allow read-only tools accept them)
 - No external APIs, no API keys, no registration
 - Streamable HTTP (default) or stdio
 - Hardened container: non-root, read-only filesystem, no capabilities, ~90 MB image
