@@ -1,0 +1,35 @@
+services:
+  chronos-mcp:
+    build: .
+    image: chronos-mcp:1.0.0
+    container_name: chronos-mcp
+    restart: unless-stopped
+    environment:
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
+      WEEKDAY_LANG: ${WEEKDAY_LANG:-en}
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8765
+    ports:
+      - "127.0.0.1:8765:8765"   # localhost only; the MCP client runs on the host
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
