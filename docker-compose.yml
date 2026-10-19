@@ -1,7 +1,7 @@
 services:
   chronos-mcp:
     build: .
-    image: chronos-mcp:1.1.0
+    image: chronos-mcp:1.2.0
     container_name: chronos-mcp
     restart: unless-stopped
     environment:
