@@ -17,7 +17,7 @@ Language models have no clock. Without a tool they guess the date from their tra
 | `convert_time` | `time` (`HH:MM` or ISO datetime), `source_timezone`, `target_timezones` (list) | The time in each target zone, offset difference in hours (`hours_vs_source`) and day change (`day_change`) |
 | `list_timezones` | `filter` (optional substring, e.g. `Europe` or `Tokyo`) | Matching IANA names, at most 50 |
 | `date_calc` | `operation` (`add`, `diff`, `info`, `workdays`, `add_workdays`), `date`, `end_date`, `days`, `weeks`, `months`, `state`, `timezone` (see below) | Calculated date or difference, with weekday |
-| `holidays` | `year` (default: current year), `state` (default: `DEFAULT_STATE`), `date` (optional, checks one day), `timezone` | Statutory public holidays of a German state with date, weekday, name and `nationwide` flag, or for `date`: `is_holiday` and the name |
+| `holidays` | `year` (default: current year), `state` (default: `DEFAULT_STATE`; `all` for every state), `date` (optional, checks one day), `timezone` | Statutory public holidays of a German state with date, weekday, name and `nationwide` flag, or for `date`: `is_holiday` and the name. With `state="all"` all 16 states in one call |
 
 Example response of `get_current_time` for `Europe/Berlin`:
 
@@ -100,6 +100,32 @@ Holiday names are always German (`Fronleichnam`, `Buß- und Bettag`): they are p
 → {"date":"2026-11-18","weekday":"Wednesday","state":"SN","state_name":"Sachsen","is_holiday":true,"holiday":"Buß- und Bettag"}
 ```
 
+#### All states at once
+
+For questions about several or all states ("Where is 1 November a public holiday?") pass `state="all"` (also `alle`, `DE`, `Deutschland`) and get every state in one call instead of sixteen:
+
+- with `date`: per state `is_holiday` and the holiday name, plus the summary lists `holiday_in` and `not_holiday_in` (code and name each) and `is_holiday_nationwide`;
+- with `year` (or neither): the nationwide holidays once under `nationwide`, and per state only the `additional` ones with the total `count` and any `notes`. The response stays at a few kilobytes.
+
+```text
+{"date":"2026-11-01","state":"all"}
+→ {"date":"2026-11-01","weekday":"Sunday","state":"all","is_holiday_nationwide":false,
+   "holiday_in_count":5,"holiday_in":[{"state":"BW","state_name":"Baden-Württemberg"},
+     {"state":"BY","state_name":"Bayern"},{"state":"NW","state_name":"Nordrhein-Westfalen"},
+     {"state":"RP","state_name":"Rheinland-Pfalz"},{"state":"SL","state_name":"Saarland"}],
+   "not_holiday_in_count":11,"not_holiday_in":[{"state":"BE","state_name":"Berlin"}, ...],
+   "states":[{"state":"BW","state_name":"Baden-Württemberg","is_holiday":true,"holiday":"Allerheiligen"}, ...]}
+
+{"year":2026,"state":"all"}
+→ {"year":2026,"state":"all","nationwide_count":9,"nationwide":[
+     {"date":"2026-01-01","weekday":"Thursday","name":"Neujahr"}, ...],
+   "states":{"BW":{"state_name":"Baden-Württemberg","count":12,"additional":[
+       {"date":"2026-01-06","weekday":"Tuesday","name":"Heilige Drei Könige"}, ...]},
+     ...}}
+```
+
+`date_calc` still takes a single state only.
+
 Not included: holidays that apply only in some municipalities (Fronleichnam in parts of Saxony and Thuringia, the Augsburg peace festival); the response says so in `notes`. Ostersonntag and Pfingstsonntag are listed for Brandenburg only, where the law names them. Holiday laws change rarely, but they do: new holidays need a code change.
 
 ## Quick start
@@ -158,13 +184,13 @@ http://127.0.0.1:8765/mcp
   "mcpServers": {
     "time": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "MCP_TRANSPORT=stdio", "chronos-mcp:1.1.0"]
+      "args": ["run", "-i", "--rm", "-e", "MCP_TRANSPORT=stdio", "chronos-mcp:1.2.0"]
     }
   }
 }
 ```
 
-Tip: add a sentence to your system prompt such as *"For the current date or time, always call `get_current_time` instead of guessing. Use `date_calc` for date arithmetic and `holidays` for public holidays."*
+Tip: add a sentence to your system prompt such as *"For the current date or time, always call `get_current_time` instead of guessing. Use `date_calc` for date arithmetic and `holidays` for public holidays (with `state="all"` for questions about several states), also for follow-up questions."*
 
 ## Updating
 
@@ -198,7 +224,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Tests pin the clock via `server._now()` and cover DST transitions, half- and quarter-hour offsets, the date line, aliases and typo suggestions, date math edge cases (leap years, month ends, negative values, working days with holidays) and the holidays of all states across several years.
+Tests pin the clock via `server._now()` and cover DST transitions, half- and quarter-hour offsets, the date line, aliases and typo suggestions, date math edge cases (leap years, month ends, negative values, working days with holidays) and the holidays of all states across several years, including the all-states mode.
 
 ## License
 
