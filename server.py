@@ -82,6 +82,14 @@ def resolve_state(name: str) -> str:
     )
 
 
+# Values of holidays(state=...) that mean "every state at once".
+ALL_STATES_KEYS = {"all", "alle", "de", "deutschland", "germany", "bundesweit"}
+
+
+def is_all_states(name: str) -> bool:
+    return _norm_state(name) in ALL_STATES_KEYS
+
+
 try:
     DEFAULT_STATE = resolve_state(os.getenv("DEFAULT_STATE", "NW"))
 except ValueError as e:
@@ -334,12 +342,70 @@ def list_timezones(filter: str = "") -> dict:
     return {"count": len(hits), "timezones": hits[:50]}
 
 
+def _holiday_entry(d: dt_date, name: str, note: str | None, nationwide: bool | None = None) -> dict:
+    entry = {"date": d.isoformat(), "weekday": WEEKDAYS[d.weekday()], "name": name}
+    if nationwide is not None:
+        entry["nationwide"] = nationwide
+    if note:
+        entry["note"] = note
+    return entry
+
+
+def _all_states_on(day: dt_date) -> dict:
+    """One day checked in all 16 states."""
+    per_state = []
+    for code, state_name in STATES.items():
+        name = holiday_dates(day.year, code).get(day)
+        per_state.append({"state": code, "state_name": state_name,
+                          "is_holiday": name is not None, "holiday": name})
+    hit = [{"state": s["state"], "state_name": s["state_name"]} for s in per_state if s["is_holiday"]]
+    miss = [{"state": s["state"], "state_name": s["state_name"]} for s in per_state if not s["is_holiday"]]
+    return {
+        "date": day.isoformat(), "weekday": WEEKDAYS[day.weekday()], "state": "all",
+        "is_holiday_nationwide": not miss,
+        "holiday_in_count": len(hit), "holiday_in": hit,
+        "not_holiday_in_count": len(miss), "not_holiday_in": miss,
+        "states": per_state,
+    }
+
+
+def _all_states_year(year: int) -> dict:
+    """Holidays of one year in all states: the nationwide ones once, then per
+    state only the additional ones (keeps the response small)."""
+    nationwide = [_holiday_entry(d, name, note)
+                  for d, name, is_nationwide, note in holiday_list(year, DEFAULT_STATE)
+                  if is_nationwide]
+    by_state = {}
+    for code, state_name in STATES.items():
+        days = holiday_list(year, code)
+        extra = [_holiday_entry(d, name, note) for d, name, is_nationwide, note in days
+                 if not is_nationwide]
+        entry = {"state_name": state_name, "count": len(days), "additional": extra}
+        if code in STATE_NOTES:
+            entry["notes"] = STATE_NOTES[code]
+        by_state[code] = entry
+    return {"year": year, "state": "all", "nationwide_count": len(nationwide),
+            "nationwide": nationwide, "states": by_state}
+
+
 @mcp.tool(annotations=READ_ONLY)
 def holidays(year: int | None = None, state: str | None = None,
              date: str | None = None, timezone: str | None = None) -> dict:
     """Statutory public holidays in Germany for a year (default: this year)
     and a state (code like 'NW', 'BY' or a name like 'Bayern'; defaults to the
-    server state). Pass 'date' (YYYY-MM-DD or 'today') to check one day instead."""
+    server state). Pass 'date' (YYYY-MM-DD or 'today') to check one day instead.
+    For questions about several or all states ("where is 1 Nov a holiday?"),
+    pass state='all' and get every state in ONE call: with 'date' the lists
+    holiday_in / not_holiday_in, with 'year' the nationwide holidays plus the
+    additional ones per state. Always use this tool instead of answering from
+    memory, also for follow-up questions or when an answer is doubted."""
+    if state and is_all_states(state):
+        if date is not None:
+            return _all_states_on(parse_date(date, timezone))
+        if year is None:
+            year = parse_date("today", timezone).year
+        holiday_list(year, DEFAULT_STATE)  # validates the year range
+        return _all_states_year(year)
     code = resolve_state(state) if state else DEFAULT_STATE
     if date is not None:
         day = parse_date(date, timezone)
@@ -351,13 +417,8 @@ def holidays(year: int | None = None, state: str | None = None,
         }
     if year is None:
         year = parse_date("today", timezone).year
-    days = []
-    for d, name, nationwide, note in holiday_list(year, code):
-        entry = {"date": d.isoformat(), "weekday": WEEKDAYS[d.weekday()],
-                 "name": name, "nationwide": nationwide}
-        if note:
-            entry["note"] = note
-        days.append(entry)
+    days = [_holiday_entry(d, name, note, nationwide)
+            for d, name, nationwide, note in holiday_list(year, code)]
     result = {"year": year, "state": code, "state_name": STATES[code],
               "count": len(days), "holidays": days}
     if code in STATE_NOTES:

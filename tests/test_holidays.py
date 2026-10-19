@@ -188,3 +188,114 @@ def test_two_holidays_on_one_day():
     r = server.holidays(state="NW", date="2008-05-01")
     assert r["holiday"] == "Tag der Arbeit / Christi Himmelfahrt"
     assert server.holiday_dates(2008, "NW")[date(2008, 5, 1)] == r["holiday"]
+
+
+ALL_SAINTS_STATES = {"BW", "BY", "NW", "RP", "SL"}
+
+
+def codes(entries: list[dict]) -> set[str]:
+    return {e["state"] for e in entries}
+
+
+@pytest.mark.parametrize("alias", ["all", "ALL", "alle", "Alle", "DE", "de", "Deutschland"])
+def test_all_states_aliases(alias):
+    r = server.holidays(state=alias, date="2026-11-01")
+    assert r["state"] == "all"
+    assert len(r["states"]) == 16
+
+
+def test_all_states_all_saints_2026():
+    r = server.holidays(state="all", date="2026-11-01")
+    assert (r["date"], r["weekday"]) == ("2026-11-01", "Sunday")
+    assert codes(r["holiday_in"]) == ALL_SAINTS_STATES
+    assert codes(r["not_holiday_in"]) == set(server.STATES) - ALL_SAINTS_STATES
+    assert (r["holiday_in_count"], r["not_holiday_in_count"]) == (5, 11)
+    assert r["is_holiday_nationwide"] is False
+    assert {"state": "RP", "state_name": "Rheinland-Pfalz"} in r["holiday_in"]
+    assert {"state": "HE", "state_name": "Hessen"} in r["not_holiday_in"]
+    per_state = {s["state"]: s for s in r["states"]}
+    assert list(per_state) == list(server.STATES)
+    for code, entry in per_state.items():
+        assert entry["state_name"] == server.STATES[code]
+        assert entry["is_holiday"] is (code in ALL_SAINTS_STATES)
+        assert entry["holiday"] == ("Allerheiligen" if code in ALL_SAINTS_STATES else None)
+
+
+def test_all_states_matches_single_state_answers():
+    r = server.holidays(state="all", date="2026-11-01")
+    for entry in r["states"]:
+        single = server.holidays(state=entry["state"], date="2026-11-01")
+        assert (single["is_holiday"], single["holiday"]) == (entry["is_holiday"], entry["holiday"])
+
+
+def test_all_states_reformation_day_2026():
+    r = server.holidays(state="all", date="2026-10-31")
+    expected = {"BB", "HB", "HH", "MV", "NI", "SN", "ST", "SH", "TH"}
+    assert codes(r["holiday_in"]) == expected
+    assert codes(r["not_holiday_in"]) == set(server.STATES) - expected
+    assert {s["holiday"] for s in r["states"] if s["is_holiday"]} == {"Reformationstag"}
+
+
+def test_all_states_nationwide_day():
+    r = server.holidays(state="all", date="2026-10-03")
+    assert r["is_holiday_nationwide"] is True
+    assert r["holiday_in_count"] == 16 and r["not_holiday_in"] == []
+    assert {s["holiday"] for s in r["states"]} == {"Tag der Deutschen Einheit"}
+
+
+def test_all_states_ordinary_day():
+    r = server.holidays(state="all", date="2026-11-02")
+    assert r["holiday_in"] == [] and r["not_holiday_in_count"] == 16
+
+
+def test_all_states_today(monkeypatch):
+    freeze(monkeypatch, "2026-10-31T23:30:00")  # already 1 November in Berlin
+    assert server.holidays(state="all", date="today")["date"] == "2026-10-31"
+    r = server.holidays(state="all", date="today", timezone="Europe/Berlin")
+    assert r["date"] == "2026-11-01" and r["holiday_in_count"] == 5
+
+
+def test_all_states_year_listing():
+    r = server.holidays(2026, "all")
+    assert (r["year"], r["state"]) == (2026, "all")
+    assert r["nationwide_count"] == len(r["nationwide"]) == 9
+    assert [h["name"] for h in r["nationwide"]][:2] == ["Neujahr", "Karfreitag"]
+    assert all("nationwide" not in h for h in r["nationwide"])
+    assert list(r["states"]) == list(server.STATES)
+    for code, entry in r["states"].items():
+        single = server.holidays(2026, code)
+        assert entry["state_name"] == server.STATES[code]
+        assert entry["count"] == single["count"] == 9 + len(entry["additional"])
+        assert [h["name"] for h in entry["additional"]] == \
+            [h["name"] for h in single["holidays"] if not h["nationwide"]]
+        assert entry.get("notes") == single.get("notes")
+    by = [h["name"] for h in r["states"]["BY"]["additional"]]
+    assert by == ["Heilige Drei Könige", "Fronleichnam", "Mariä Himmelfahrt", "Allerheiligen"]
+    assert "note" in r["states"]["BY"]["additional"][2]
+    assert r["states"]["HE"]["additional"] == [
+        {"date": "2026-06-04", "weekday": "Thursday", "name": "Fronleichnam"}]
+
+
+def test_all_states_year_2017_reformation_nationwide():
+    r = server.holidays(2017, "all")
+    assert "Reformationstag" in [h["name"] for h in r["nationwide"]]
+    assert all("Reformationstag" not in [h["name"] for h in e["additional"]]
+               for e in r["states"].values())
+
+
+def test_all_states_default_year_and_range(monkeypatch):
+    freeze(monkeypatch, "2026-12-31T23:30:00")
+    assert server.holidays(state="all")["year"] == 2026
+    assert server.holidays(state="all", timezone="Europe/Berlin")["year"] == 2027
+    with pytest.raises(ValueError, match="1995"):
+        server.holidays(1994, "all")
+
+
+def test_all_states_year_listing_stays_small():
+    import json
+    assert len(json.dumps(server.holidays(2026, "all"), ensure_ascii=False)) < 6000
+
+
+def test_single_state_unchanged_by_all_mode():
+    # "DE-NW" is still one state, not "all".
+    assert server.holidays(state="DE-NW", date="2026-11-01")["state"] == "NW"
