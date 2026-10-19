@@ -43,9 +43,14 @@ jobs:
             -H 'Accept: application/json, text/event-stream' \
             -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_current_time","arguments":{"timezone":"UTC"}}}' \
             | grep -q '"isError":false'
+          curl -fsS http://127.0.0.1:8765/mcp \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"date_calc","arguments":{"operation":"workdays","date":"2026-11-16","end_date":"2026-11-20","state":"SN"}}}' \
+            | grep -q '\\"workdays\\": 4'
       - name: Check image size
         run: |
-          size=$(docker image inspect chronos-mcp:1.0.0 --format '{{.Size}}')
+          size=$(docker image inspect chronos-mcp:1.1.0 --format '{{.Size}}')
           echo "Image size: $((size / 1000000)) MB"
           [ "$size" -lt 150000000 ]
       - if: always()

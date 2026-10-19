@@ -125,7 +125,9 @@ def test_list_timezones():
 
 def test_tools_are_marked_read_only():
     tools = asyncio.run(server.mcp.list_tools())
-    assert {t.name for t in tools} == {"get_current_time", "convert_time", "list_timezones"}
+    assert {t.name for t in tools} == {
+        "get_current_time", "convert_time", "list_timezones", "holidays", "date_calc",
+    }
     for tool in tools:
         assert tool.annotations.readOnlyHint is True
         assert tool.annotations.destructiveHint is False
